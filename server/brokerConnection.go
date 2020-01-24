@@ -70,10 +70,17 @@ func newConnection() *BrokerConnection {
 		} else {
 			session, ok := dashboard.Instance().Sessions().GetOrNew(msg.Identifier)
 			if ok {
-				//session 旧的需要断开连接
+				//关闭旧的连接
+				session.Disconnect()
 			}
-			c._session = session
+
 			//设置新的连接关联
+			session.WithDisconnect(c.termination)
+			c._session = session
+		}
+
+		if msg.Will != nil {
+
 		}
 	}
 
@@ -153,9 +160,7 @@ func HandleConnection(conn *BrokerConnection) {
 
 			if err != nil {
 				if err != ErrDisconnect {
-					/*if conn.HasWillMessage() {
-						self.SendWillMessage(conn)
-					}*/
+					conn.Will()
 					dashboard.Instance().LError("%d %s => Error: %s",
 						conn._id,
 						conn._addr,
@@ -172,21 +177,22 @@ func HandleConnection(conn *BrokerConnection) {
 
 //BrokerConnection mqtt 连接者对象
 type BrokerConnection struct {
-	_id        int64
-	_addr      string
-	_handle    io.ReadWriteCloser
-	_session   *sessions.Session
-	_reader    *bufio.Reader
-	_writer    *bufio.Writer
-	_kicker    time.Timer
-	_keepalive int
-	_queue     chan codec.Message
-	_closed    chan bool
-	_connected bool
-	_events    map[string]interface{}
-	_state     State
-	_wgw       sync.WaitGroup
-	_activity  time.Time
+	_id          int64
+	_addr        string
+	_handle      io.ReadWriteCloser
+	_session     *sessions.Session
+	_reader      *bufio.Reader
+	_writer      *bufio.Writer
+	_willMessage *codec.Will
+	_kicker      time.Timer
+	_keepalive   int
+	_queue       chan codec.Message
+	_closed      chan bool
+	_connected   bool
+	_events      map[string]interface{}
+	_state       State
+	_wgw         sync.WaitGroup
+	_activity    time.Time
 }
 
 //WithHandle 设置连接者IO句柄
@@ -222,12 +228,43 @@ func (slf *BrokerConnection) GetRealAddr() string {
 	return slf._handle.(net.Conn).RemoteAddr().String()
 }
 
+//Will 发送遗嘱消息，如果有
+func (slf *BrokerConnection) Will() {
+	if slf._willMessage == nil {
+		return
+	}
+	will := slf._willMessage
+	msg := codec.SpawnPublishMessage()
+	msg.TopicName = will.Topic
+	msg.Payload = []byte(will.Message)
+	msg.QosLevel = int(will.Qos)
+}
+
 //Ping 发送Ping消息
 func (slf *BrokerConnection) Ping() {
 	if slf._state == StateClosed {
 		return
 	}
 	slf._queue <- codec.SpawnPingreqMessage()
+}
+
+func (slf *BrokerConnection) Publish(msg *codec.Publish) {
+	if len(msg.TopicName) < 1 {
+		return
+	}
+
+	if msg.Retain > 0 {
+		if len(msg.Payload) == 0 {
+			//删除主题对应的消息
+			dashboard.Instance().LDebug("%d %s => Deleted retain %s", msg.TopicName)
+			return
+		} else {
+			//更新主题对应消息
+		}
+
+		//获取msg.TopicName主题目标
+		//遍历群发
+	}
 }
 
 //writeMessage 写消息
@@ -408,6 +445,10 @@ func (slf *BrokerConnection) offlinePush(msg codec.Message) {
 				msg)
 		}
 	}
+}
+
+func (slf *BrokerConnection) termination() {
+	slf.Close()
 }
 
 //Close 关闭连接
