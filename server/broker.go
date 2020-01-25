@@ -1,11 +1,12 @@
 package server
 
-import "net"
+import (
+	"github.com/yamakiller/magicMqtt/network"
+)
 
-//Broker server instance
 type Broker interface {
-	ListenAndServe() error
-	Listener() net.Listener
-	Serve(l net.Listener) error
+	ListenAndServe(string) error
+	Listener() network.IListener
+	Serve()
 	Shutdown()
 }
