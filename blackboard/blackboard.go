@@ -2,6 +2,10 @@ package blackboard
 
 import (
 	"sync"
+
+	"github.com/yamakiller/magicMqtt/auth"
+	"github.com/yamakiller/magicMqtt/sessions"
+	"github.com/yamakiller/magicMqtt/topics"
 )
 
 var (
@@ -20,5 +24,8 @@ func Instance() *Board {
 
 //Board 黑板数据
 type Board struct {
-	Deploy Config
+	Deploy   Config
+	Auth     auth.Auth
+	Sessions *sessions.SessionGroup
+	Topics   *topics.Manager
 }

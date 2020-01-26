@@ -1,6 +1,7 @@
 package message
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -280,4 +281,59 @@ func Parse(reader io.Reader, maxLen int) (Message, error) {
 	}
 
 	return message, nil
+}
+
+//WriteMessageTo 输出消息
+func WriteMessageTo(message Message, w io.Writer) (int64, error) {
+	var written int64
+	var e error
+
+	switch message.GetType() {
+	case encoding.PTypeConnect:
+		m := message.(*Connect)
+		written, e = m.WriteTo(w)
+	case encoding.PTypeConnack:
+		m := message.(*Connack)
+		written, e = m.WriteTo(w)
+	case encoding.PTypePublish:
+		m := message.(*Publish)
+		written, e = m.WriteTo(w)
+	case encoding.PTypeSubscribe:
+		m := message.(*Subscribe)
+		written, e = m.WriteTo(w)
+	case encoding.PTypeSuback:
+		m := message.(*Suback)
+		written, e = m.WriteTo(w)
+	case encoding.PTypeUnsubscribe:
+		m := message.(*Unsubscribe)
+		written, e = m.WriteTo(w)
+	case encoding.PTypeDisconnect:
+		m := message.(*Disconnect)
+		written, e = m.WriteTo(w)
+	case encoding.PTypeUnsuback:
+		m := message.(*Unsuback)
+		written, e = m.WriteTo(w)
+	case encoding.PTypePuback:
+		m := message.(*Puback)
+		written, e = m.WriteTo(w)
+	case encoding.PTypePubrec:
+		m := message.(*Pubrec)
+		written, e = m.WriteTo(w)
+	case encoding.PTypePubrel:
+		m := message.(*Pubrel)
+		written, e = m.WriteTo(w)
+	case encoding.PTypePubcomp:
+		m := message.(*Pubcomp)
+		written, e = m.WriteTo(w)
+	case encoding.PTypePingreq:
+		m := message.(*Pingreq)
+		written, e = m.WriteTo(w)
+	case encoding.PTypePingresp:
+		m := message.(*Pingresp)
+		written, e = m.WriteTo(w)
+	default:
+		return 0, errors.New("Not supported message")
+	}
+
+	return written, e
 }

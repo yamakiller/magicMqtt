@@ -11,6 +11,7 @@ import (
 	"github.com/yamakiller/magicMqtt/network"
 )
 
+//TCPBroker mqtt tcp 服务
 type TCPBroker struct {
 	_shutdown chan bool
 	_lst      network.IListener
@@ -38,6 +39,7 @@ func (slf *TCPBroker) ListenAndServe(address string) error {
 	return nil
 }
 
+//Serve 服务逻辑
 func (slf *TCPBroker) Serve() error {
 	defer func() {
 		slf._wg.Done()
@@ -90,6 +92,7 @@ Exit:
 	return err
 }
 
+//Shutdown 关闭mqtt tcp服务
 func (slf *TCPBroker) Shutdown() {
 	close(slf._shutdown)
 	slf._lst.Close()
