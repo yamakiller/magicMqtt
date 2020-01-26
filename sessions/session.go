@@ -12,6 +12,7 @@ func newSession() *Session {
 	return &Session{
 		_waitAck:      common.NewMessageTable(),
 		_offlineQueue: make([]message.Message, 0),
+		_topics:       make(map[string]byte),
 	}
 }
 
@@ -21,6 +22,7 @@ type Session struct {
 	_onWrite      func(message.Message) error
 	_offlineQueue []message.Message
 	_waitAck      *common.MessageTable
+	_topics       map[string]byte
 	_offlineLimit int
 	_onDisconnect func()
 	_sync         sync.Mutex
@@ -41,6 +43,40 @@ func (slf *Session) WithOnDisconnect(f func()) {
 	slf._sync.Lock()
 	defer slf._sync.Unlock()
 	slf._onDisconnect = f
+}
+
+//AddTopics 添加主题
+func (slf *Session) AddTopics(topic string, qos byte) {
+	slf._sync.Lock()
+	defer slf._sync.Unlock()
+	slf._topics[topic] = qos
+}
+
+//RemoveTopics 删除一个主题
+func (slf *Session) RemoveTopics(topic string) {
+	slf._sync.Lock()
+	defer slf._sync.Unlock()
+	if _, ok := slf._topics[topic]; ok {
+		delete(slf._topics, topic)
+	}
+}
+
+//Topics 返回所有主题
+func (slf *Session) Topics() ([]string, []byte, error) {
+	slf._sync.Lock()
+	defer slf._sync.Unlock()
+
+	var (
+		topics []string
+		qoss   []byte
+	)
+
+	for k, v := range slf._topics {
+		topics = append(topics, k)
+		qoss = append(qoss, v)
+	}
+
+	return topics, qoss, nil
 }
 
 //DoDisconnect 执行断开连接操作

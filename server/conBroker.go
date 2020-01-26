@@ -49,6 +49,7 @@ type ConBroker struct {
 	_session      *sessions.Session
 	_willMsg      *message.Will
 	_subscription map[string]*common.Subscription
+	_rmsgs        []*message.Publish
 	_closed       chan bool
 	_connected    bool
 	_cleanSession bool
@@ -224,10 +225,20 @@ func (slf *ConBroker) onConnect(msg *message.Connect) {
 
 		slf._session = session
 
-		//载入旧的历史主题
-		/*for key, htopic := range slf._session.SubscribeHistory {
-			slf._subscription[key] = htopic
-		}*/
+		//重新注册主题
+		ts, qos, err := slf._session.Topics()
+		if err != nil {
+			for i, topic := range ts {
+				sub := &common.Subscription{
+					Topic:  topic,
+					Qos:    qos[i],
+					Client: slf._session.GetClientID(),
+				}
+
+				slf._subscription[topic] = sub
+				blackboard.Instance().Topics.Subscribe([]byte(topic), qos[i], sub)
+			}
+		}
 
 		offlineMessage := slf._session.OfflineMessages()
 
@@ -315,11 +326,73 @@ func (slf *ConBroker) onPubcomp(msg *message.Pubcomp) {
 }
 
 func (slf *ConBroker) onSubscribe(msg *message.Subscribe) {
+	ts := msg.Payload
 
+	suback := message.SpawnSubackMessage()
+	suback.PacketIdentifier = msg.PacketIdentifier
+	var retcodes []byte
+	for _, topic := range ts {
+		if oldSub, exist := slf._subscription[topic.TopicPath]; exist {
+			blackboard.Instance().Topics.Unsubscribe([]byte(oldSub.Topic), oldSub)
+			delete(slf._subscription, topic.TopicPath)
+		}
+
+		sub := &common.Subscription{
+			Topic:  topic.TopicPath,
+			Qos:    topic.RequestedQos,
+			Client: slf._session.GetClientID(),
+		}
+
+		rqos, err := blackboard.Instance().Topics.Subscribe([]byte(topic.TopicPath),
+			topic.RequestedQos, sub)
+		if err != nil {
+			//TODO: 记录日志
+			retcodes = append(retcodes, topics.QosFailure)
+			continue
+		}
+
+		slf._subscription[topic.TopicPath] = sub
+		slf._session.AddTopics(topic.TopicPath, topic.RequestedQos)
+		retcodes = append(retcodes, rqos)
+		blackboard.Instance().Topics.Retained([]byte(topic.TopicPath), &slf._rmsgs)
+	}
+	suback.Qos = retcodes
+	err := slf.WriteMessage(suback)
+	if err != nil {
+		//TODO: 记录日志
+		return
+	}
+
+	for _, rm := range slf._rmsgs {
+		if err := slf.WriteMessage(rm); err != nil {
+			//TODO: 记录日志
+		} else {
+			//TODO: 记录日志
+		}
+	}
 }
 
 func (slf *ConBroker) onUnSubscribe(msg *message.Unsubscribe) {
+	topics := msg.Payload
 
+	for _, topic := range topics {
+		sub, exist := slf._subscription[topic.TopicPath]
+		if exist {
+			blackboard.Instance().Topics.Unsubscribe([]byte(sub.Topic), sub)
+			session := slf._session
+			if session != nil {
+				session.RemoveTopics(topic.TopicPath)
+				delete(slf._subscription, topic.TopicPath)
+			}
+		}
+	}
+
+	unsuback := message.SpawnSubackMessage()
+	unsuback.PacketIdentifier = msg.PacketIdentifier
+	err := slf.WriteMessage(unsuback)
+	if err != nil {
+		//TODO: 记录日志
+	}
 }
 
 func (slf *ConBroker) onPingresp(msg *message.Pingresp) {
@@ -459,6 +532,14 @@ func (slf *ConBroker) Close() error {
 	slf._closed <- true
 	err := slf._conn.Close()
 	slf._wg.Wait()
+	subs := slf._subscription
+	for _, sub := range subs {
+		err := blackboard.Instance().Topics.Unsubscribe([]byte(sub.Topic), sub)
+		if err != nil {
+			//TODO: 记录错误日志
+		}
+	}
+
 	close(slf._queue)
 	if slf._session != nil {
 		slf._session.WithOnDisconnect(nil)
