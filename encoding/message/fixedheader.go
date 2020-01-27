@@ -104,7 +104,10 @@ func (slf *FixedHeader) decode(reader io.Reader) error {
 	mt := FirstByte >> 4
 	flag := FirstByte & 0x0f
 
-	length, _ := encoding.ReadVarint(reader)
+	length, err := encoding.ReadVarint(reader)
+	if err != nil {
+		return err
+	}
 
 	slf.Type = encoding.PType(mt)
 	slf.Dupe = ((flag & 0x08) > 0)

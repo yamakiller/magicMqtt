@@ -8,6 +8,6 @@ import (
 type Broker interface {
 	ListenAndServe(string) error
 	Listener() network.IListener
-	Serve()
+	Serve() error
 	Shutdown()
 }

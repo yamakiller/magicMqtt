@@ -8,12 +8,28 @@ import (
 	"github.com/yamakiller/magicMqtt/encoding/message"
 )
 
-func newSession() *Session {
-	return &Session{
+func newSession(offlineLimit int) *Session {
+	ss := &Session{
 		_waitAck:      common.NewMessageTable(),
 		_offlineQueue: make([]message.Message, 0),
+		_offlineLimit: offlineLimit,
 		_topics:       make(map[string]byte),
 	}
+	ss._waitAck.WithOnFinish(func(id uint16, msg message.Message, opaque interface{}) {
+		if m, ok := msg.(*message.Publish); ok {
+			if m.QosLevel == 1 {
+				if b, ok := opaque.(chan bool); ok {
+					close(b)
+				}
+			} else if m.QosLevel == 2 {
+				if b, ok := opaque.(chan bool); ok {
+					close(b)
+				}
+			}
+		}
+	})
+
+	return ss
 }
 
 //Session 连接会话状态

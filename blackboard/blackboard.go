@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/yamakiller/magicMqtt/auth"
+	"github.com/yamakiller/magicMqtt/log"
 	"github.com/yamakiller/magicMqtt/sessions"
 	"github.com/yamakiller/magicMqtt/topics"
 )
@@ -26,6 +27,7 @@ func Instance() *Board {
 type Board struct {
 	Deploy   Config
 	Auth     auth.Auth
+	Log      *log.LogBroker
 	Sessions *sessions.SessionGroup
 	Topics   *topics.Manager
 }

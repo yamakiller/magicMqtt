@@ -49,13 +49,13 @@ type ConBroker struct {
 	_session      *sessions.Session
 	_willMsg      *message.Will
 	_subscription map[string]*common.Subscription
-	_rmsgs        []*message.Publish
 	_closed       chan bool
 	_connected    bool
 	_cleanSession bool
 	_ping         int
 	_activity     time.Time
 	_state        network.State
+	_once         sync.Once
 	_wg           sync.WaitGroup
 }
 
@@ -148,7 +148,7 @@ func (slf *ConBroker) ParseMessage() (message.Message, error) {
 		slf.onPingresp(msg.(*message.Pingresp))
 		break
 	default:
-		//报错误
+		slf.Error("Undefined message/%d", msg.GetType())
 	}
 
 	slf.invalidateTimer()
@@ -178,14 +178,14 @@ func (slf *ConBroker) flusher() {
 	n := slf._writer.Buffered()
 	if n > 0 {
 		if err := slf._writer.Flush(); err != nil {
-			//TODO: 记录日志
+			slf.Error("flush error, %s", err.Error())
 		}
 	}
 }
 
 func (slf *ConBroker) onConnect(msg *message.Connect) {
 	if slf._connected {
-		//TODO:记录日志关闭连接
+		slf.Debug("Client is connected")
 		return
 	}
 
@@ -196,18 +196,18 @@ func (slf *ConBroker) onConnect(msg *message.Connect) {
 
 	defer func() {
 		if err := slf.WriteMessage(connack); err != nil {
-			//TODO: 写入错误日志
+			slf.Error("Response/connack error, %s", err.Error())
 		}
 	}()
 
 	if _, err := blackboard.Instance().Auth.Connect(msg.Identifier, name, pwd); err != nil {
-		//TODO:记录日志回复connack包
+
 		if err == code.ErrAuthClientNot {
 			connack.ReturnCode = 0x05
 		} else {
 			connack.ReturnCode = 0x04
 		}
-
+		slf.Debug("Auth/%s/%s/%s connect fail, %s", msg.Identifier, name, pwd, err.Error())
 		return
 	}
 
@@ -216,9 +216,9 @@ func (slf *ConBroker) onConnect(msg *message.Connect) {
 		if session != nil {
 			session.DoDisconnect()
 		}
-		session = blackboard.Instance().Sessions.New(msg.Identifier)
+		session = blackboard.Instance().Sessions.New(msg.Identifier, blackboard.Instance().Deploy.OfflineQueueSize)
 	} else {
-		session, org := blackboard.Instance().Sessions.GetOrNew(msg.Identifier)
+		session, org := blackboard.Instance().Sessions.GetOrNew(msg.Identifier, blackboard.Instance().Deploy.OfflineQueueSize)
 		if org {
 			session.DoDisconnect()
 		}
@@ -262,7 +262,6 @@ func (slf *ConBroker) onConnect(msg *message.Connect) {
 func (slf *ConBroker) onDisconnect(msg *message.Disconnect) {
 	if slf._session != nil {
 		slf._session.WithOnDisconnect(nil)
-		//TODO: 考虑删除创建的主题
 		slf._willMsg = nil
 	}
 	slf.Close()
@@ -277,7 +276,7 @@ func (slf *ConBroker) onPublish(msg *message.Publish) {
 		puback := message.SpawnPubackMessage()
 		puback.PacketIdentifier = msg.PacketIdentifier
 		if err := slf.WriteMessage(puback); err != nil {
-			//TODO: 记录日志
+			slf.Error("Response/puback error, %s", err.Error())
 			return
 		}
 		slf.procPublish(msg)
@@ -285,12 +284,12 @@ func (slf *ConBroker) onPublish(msg *message.Publish) {
 		pubrec := message.SpawnPubrecMessage()
 		pubrec.PacketIdentifier = msg.PacketIdentifier
 		if err := slf.WriteMessage(pubrec); err != nil {
-			//TODO: 记录日志
+			slf.Error("Response/pubrec error, %s", err.Error())
 			return
 		}
 		slf.procPublish(msg)
 	default:
-		//TODO: 记录日志
+		slf.Error("publish message qos level error: %d", msg.QosLevel)
 		return
 	}
 }
@@ -331,6 +330,7 @@ func (slf *ConBroker) onSubscribe(msg *message.Subscribe) {
 	suback := message.SpawnSubackMessage()
 	suback.PacketIdentifier = msg.PacketIdentifier
 	var retcodes []byte
+	var remsg []*message.Publish
 	for _, topic := range ts {
 		if oldSub, exist := slf._subscription[topic.TopicPath]; exist {
 			blackboard.Instance().Topics.Unsubscribe([]byte(oldSub.Topic), oldSub)
@@ -346,7 +346,7 @@ func (slf *ConBroker) onSubscribe(msg *message.Subscribe) {
 		rqos, err := blackboard.Instance().Topics.Subscribe([]byte(topic.TopicPath),
 			topic.RequestedQos, sub)
 		if err != nil {
-			//TODO: 记录日志
+			slf.Error("Sub %s error, %s", topic.TopicPath, err.Error())
 			retcodes = append(retcodes, topics.QosFailure)
 			continue
 		}
@@ -354,20 +354,20 @@ func (slf *ConBroker) onSubscribe(msg *message.Subscribe) {
 		slf._subscription[topic.TopicPath] = sub
 		slf._session.AddTopics(topic.TopicPath, topic.RequestedQos)
 		retcodes = append(retcodes, rqos)
-		blackboard.Instance().Topics.Retained([]byte(topic.TopicPath), &slf._rmsgs)
+		blackboard.Instance().Topics.Retained([]byte(topic.TopicPath), &remsg)
 	}
 	suback.Qos = retcodes
 	err := slf.WriteMessage(suback)
 	if err != nil {
-		//TODO: 记录日志
+		slf.Error("Response sub ack error, %s", err.Error())
 		return
 	}
 
-	for _, rm := range slf._rmsgs {
+	for _, rm := range remsg {
 		if err := slf.WriteMessage(rm); err != nil {
-			//TODO: 记录日志
+			slf.Error("Response/Retained %s error, %s", rm.TopicName, err.Error())
 		} else {
-			//TODO: 记录日志
+			slf.Debug("Response/Retained %s success", rm.TopicName)
 		}
 	}
 }
@@ -389,9 +389,8 @@ func (slf *ConBroker) onUnSubscribe(msg *message.Unsubscribe) {
 
 	unsuback := message.SpawnSubackMessage()
 	unsuback.PacketIdentifier = msg.PacketIdentifier
-	err := slf.WriteMessage(unsuback)
-	if err != nil {
-		//TODO: 记录日志
+	if err := slf.WriteMessage(unsuback); err != nil {
+		slf.Error("Response unsub ack error, %s", err.Error())
 	}
 }
 
@@ -402,7 +401,7 @@ func (slf *ConBroker) onPingresp(msg *message.Pingresp) {
 func (slf *ConBroker) procPublish(msg *message.Publish) {
 	if msg.Retain > 0 {
 		if err := blackboard.Instance().Topics.Retain(msg); err != nil {
-			//TODO: 记录错误日志
+			slf.Error("Sub topic error, %s", err.Error())
 		}
 	}
 
@@ -412,7 +411,7 @@ func (slf *ConBroker) procPublish(msg *message.Publish) {
 	err := blackboard.Instance().Topics.Subscribers([]byte(msg.TopicName),
 		byte(msg.QosLevel), &subs, &qoss)
 	if err != nil {
-		//TODO: 记录错误日志
+		slf.Error("Sub topic/%s error, %s", msg.TopicName, err.Error())
 		return
 	}
 
@@ -425,12 +424,12 @@ func (slf *ConBroker) procPublish(msg *message.Publish) {
 		if ok {
 			ss := blackboard.Instance().Sessions.Get(s.Client)
 			if ss == nil {
-				//TODO: 记录错误信息
+				slf.Debug("No client/%s associated sessions were found", s.Client)
 				continue
 			}
 
 			if err := ss.WriteMessage(msg); err != nil {
-				//TODO: 记录错误日志
+				slf.Error("Distribution/%+v to client/%s error, %s", msg, s.Client, err.Error())
 			}
 		}
 	}
@@ -472,7 +471,7 @@ func (slf *ConBroker) SendPublishMessage(msg *message.Publish) {
 	err := blackboard.Instance().Topics.Subscribers([]byte(msg.TopicName),
 		byte(msg.QosLevel), &subs, &qoss)
 	if err != nil {
-		//log.Error("search sub client error,  ", zap.Error(err))
+		slf.Error("Search sub client error, %s", err.Error())
 		return
 	}
 
@@ -482,15 +481,14 @@ func (slf *ConBroker) SendPublishMessage(msg *message.Publish) {
 		}
 		s, ok := sub.(*common.Subscription)
 		if ok {
-			//可以考虑如果没有找到在线的连接，可以通过ClientID找到目标session放入离线数据中
 			ss := blackboard.Instance().Sessions.Get(s.Client)
 			if ss == nil {
-				//TODO: 记录日志
+				slf.Debug("No client/%s associated sessions were found", s.Client)
 				continue
 			}
 
 			if err := ss.WriteMessage(msg); err != nil {
-				//TODO: 写日志
+				slf.Error("Distribution/%+v to client/%s error, %s", msg, s.Client, err.Error())
 			}
 		}
 	}
@@ -499,52 +497,87 @@ func (slf *ConBroker) SendPublishMessage(msg *message.Publish) {
 //Terminate 终止连接器
 func (slf *ConBroker) Terminate() {
 	if err := slf.Close(); err != nil {
-		//TODO: 记录日志
+		slf.Error("Terminate error:%s", err.Error())
 	}
 }
 
 //Close 关闭连接器
 func (slf *ConBroker) Close() error {
-	if slf._willMsg != nil {
-		slf.Will()
-	}
-
-	if slf._cleanSession {
-		if slf._session != nil {
-			blackboard.Instance().Sessions.Remove(slf._session.GetClientID())
-			//TODO: 移出已订阅的主题
-		} else {
-			//TODO:记录异常日志
+	var err error
+	slf._once.Do(func() {
+		if slf._willMsg != nil {
+			slf.Will()
 		}
-	} else if slf._session != nil {
-		for msg := range slf._queue {
-			switch msg.GetType() {
-			case encoding.PTypeConnect:
-			case encoding.PTypeDisconnect:
-			case encoding.PTypePingreq:
-			default:
-				slf._session.PushOfflineMessage(msg)
+
+		if slf._cleanSession {
+			if slf._session != nil {
+				blackboard.Instance().Sessions.Remove(slf._session.GetClientID())
+			} else {
+				slf.Warning("Closing [clean session:true] client unconnect")
+			}
+		} else if slf._session != nil {
+			for msg := range slf._queue {
+				switch msg.GetType() {
+				case encoding.PTypeConnect:
+				case encoding.PTypeDisconnect:
+				case encoding.PTypePingreq:
+				case encoding.PTypePingresp:
+				default:
+					slf._session.PushOfflineMessage(msg)
+				}
 			}
 		}
-	}
 
-	slf._state = network.StateClosed
-	slf._closed <- true
-	err := slf._conn.Close()
-	slf._wg.Wait()
-	subs := slf._subscription
-	for _, sub := range subs {
-		err := blackboard.Instance().Topics.Unsubscribe([]byte(sub.Topic), sub)
-		if err != nil {
-			//TODO: 记录错误日志
+		slf._state = network.StateClosed
+		slf._closed <- true
+		err = slf._conn.Close()
+		slf._wg.Wait()
+		//开始移除订阅的主题
+		subs := slf._subscription
+		for _, sub := range subs {
+			err = blackboard.Instance().Topics.Unsubscribe([]byte(sub.Topic), sub)
+			if err != nil {
+				slf.Error("Closing unsubscribe error:%s", err.Error())
+			}
 		}
-	}
 
-	close(slf._queue)
-	if slf._session != nil {
-		slf._session.WithOnDisconnect(nil)
-		slf._session.WithOnWrite(nil)
-		slf._session = nil
-	}
+		close(slf._queue)
+		if slf._session != nil {
+			slf._session.WithOnDisconnect(nil)
+			slf._session.WithOnWrite(nil)
+			slf._session = nil
+		}
+	})
 	return err
+}
+
+//Info 输出等级为Info的日志
+func (slf *ConBroker) Info(fmt string, args ...interface{}) {
+	id, client := slf.getPrefix()
+	blackboard.Instance().Log.Info(id, client, fmt, args...)
+}
+
+//Error 输出等级为Error的日志
+func (slf *ConBroker) Error(fmt string, args ...interface{}) {
+	id, client := slf.getPrefix()
+	blackboard.Instance().Log.Error(id, client, fmt, args...)
+}
+
+//Warning 输出等级为Warning的日志
+func (slf *ConBroker) Warning(fmt string, args ...interface{}) {
+	id, client := slf.getPrefix()
+	blackboard.Instance().Log.Error(id, client, fmt, args...)
+}
+
+func (slf *ConBroker) Debug(fmt string, args ...interface{}) {
+	id, client := slf.getPrefix()
+	blackboard.Instance().Log.Debug(id, client, fmt, args...)
+}
+
+func (slf *ConBroker) getPrefix() (int64, string) {
+	session := slf._session
+	if session == nil {
+		return slf._id, ""
+	}
+	return slf._id, session.GetClientID()
 }

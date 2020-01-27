@@ -11,8 +11,8 @@ import (
 )
 
 //Init 创建一个MYSQL授权，验证器
-func Init() (*AuthMYSQL, error) {
-	content, err := ioutil.ReadFile("./auth/authdb/mysql.json")
+func Init(configFile string) (*AuthMYSQL, error) {
+	content, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		return nil, err
 	}

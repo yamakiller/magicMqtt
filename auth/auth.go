@@ -16,10 +16,10 @@ type Auth interface {
 }
 
 //New 创建授权验证器
-func New(name string) (Auth, error) {
+func New(name string, conf string) (Auth, error) {
 	switch name {
 	case AuthDB:
-		return authdb.Init()
+		return authdb.Init(conf)
 	default:
 		return &Mock{}, nil
 	}

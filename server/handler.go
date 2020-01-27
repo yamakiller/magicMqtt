@@ -1,6 +1,9 @@
 package server
 
 import (
+	"errors"
+	"time"
+
 	"github.com/yamakiller/magicMqtt/encoding"
 	"github.com/yamakiller/magicMqtt/encoding/message"
 	"github.com/yamakiller/magicMqtt/network"
@@ -8,16 +11,18 @@ import (
 
 //HandleConnection 处理句柄
 func HandleConnection(conn *ConBroker) {
-	conn._wg.Add(2)
+	conn._wg.Add(1)
 	go func() {
-		defer func() {
-			conn._wg.Done()
-			conn.Close()
-		}()
-
 		for {
-			//接收消息
+			_, err := conn.ParseMessage()
+			if conn._state == network.StateClosed {
+				err = errors.New("error disconnect")
+			}
 
+			if err != nil {
+				conn.Close()
+				return
+			}
 		}
 
 	}()
@@ -49,9 +54,10 @@ func HandleConnection(conn *ConBroker) {
 					}
 
 					if err := conn.write(msg); err != nil {
-						//TODO: 记录发送错误日志，这个环境可能会丢失数据
+						conn.Error("Write buffer error, %s", err.Error())
 					}
 					conn.invalidateTimer()
+					conn._activity = time.Now()
 				} else {
 					ss := conn._session
 					if ss != nil {

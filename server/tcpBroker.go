@@ -65,6 +65,7 @@ func (slf *TCPBroker) Serve() error {
 						tmpDelay = max
 					}
 
+					slf.Debug("Accept error, %s", e.Error())
 					time.Sleep(tmpDelay)
 					continue
 				}
@@ -92,9 +93,33 @@ Exit:
 	return err
 }
 
+//Listener listener
+func (slf *TCPBroker) Listener() network.IListener {
+	return slf._lst
+}
+
 //Shutdown 关闭mqtt tcp服务
 func (slf *TCPBroker) Shutdown() {
 	close(slf._shutdown)
 	slf._lst.Close()
 	slf._wg.Wait()
+}
+
+//Info 输出等级为Info的日志
+func (slf *TCPBroker) Info(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Info(0, "", fmt, args...)
+}
+
+//Error 输出等级为Error的日志
+func (slf *TCPBroker) Error(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Error(0, "", fmt, args...)
+}
+
+//Warning 输出等级为Warning的日志
+func (slf *TCPBroker) Warning(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Error(0, "", fmt, args...)
+}
+
+func (slf *TCPBroker) Debug(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Debug(0, "", fmt, args...)
 }
