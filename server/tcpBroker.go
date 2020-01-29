@@ -70,7 +70,7 @@ func (slf *TCPBroker) Serve() error {
 					continue
 				}
 
-				if strings.Contains(err.Error(), "use of closed network connection") {
+				if strings.Contains(e.Error(), "use of closed network connection") {
 					continue
 				}
 
@@ -120,6 +120,7 @@ func (slf *TCPBroker) Warning(fmt string, args ...interface{}) {
 	blackboard.Instance().Log.Error(0, "", fmt, args...)
 }
 
+//Debug 输出等级为Debug的日志
 func (slf *TCPBroker) Debug(fmt string, args ...interface{}) {
 	blackboard.Instance().Log.Debug(0, "", fmt, args...)
 }

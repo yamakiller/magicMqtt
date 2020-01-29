@@ -14,6 +14,7 @@ func newSession(offlineLimit int) *Session {
 		_offlineQueue: make([]message.Message, 0),
 		_offlineLimit: offlineLimit,
 		_topics:       make(map[string]byte),
+		_sync:         sync.Mutex{},
 	}
 	ss._waitAck.WithOnFinish(func(id uint16, msg message.Message, opaque interface{}) {
 		if m, ok := msg.(*message.Publish); ok {

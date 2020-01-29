@@ -217,15 +217,13 @@ func (slf *ConBroker) onConnect(msg *message.Connect) {
 			session.DoDisconnect()
 		}
 		session = blackboard.Instance().Sessions.New(msg.Identifier, blackboard.Instance().Deploy.OfflineQueueSize)
+		slf._session = session
 	} else {
 		session, org := blackboard.Instance().Sessions.GetOrNew(msg.Identifier, blackboard.Instance().Deploy.OfflineQueueSize)
 		if org {
 			session.DoDisconnect()
 		}
-
 		slf._session = session
-
-		//重新注册主题
 		ts, qos, err := slf._session.Topics()
 		if err != nil {
 			for i, topic := range ts {
@@ -505,6 +503,7 @@ func (slf *ConBroker) Terminate() {
 func (slf *ConBroker) Close() error {
 	var err error
 	slf._once.Do(func() {
+		slf.Debug("closed connection")
 		if slf._willMsg != nil {
 			slf.Will()
 		}
@@ -547,6 +546,7 @@ func (slf *ConBroker) Close() error {
 			slf._session.WithOnWrite(nil)
 			slf._session = nil
 		}
+		slf.Debug("closed connected complate")
 	})
 	return err
 }
@@ -569,6 +569,7 @@ func (slf *ConBroker) Warning(fmt string, args ...interface{}) {
 	blackboard.Instance().Log.Error(id, client, fmt, args...)
 }
 
+//Debug 输出等级为Debug的日志
 func (slf *ConBroker) Debug(fmt string, args ...interface{}) {
 	id, client := slf.getPrefix()
 	blackboard.Instance().Log.Debug(id, client, fmt, args...)

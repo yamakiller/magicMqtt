@@ -1,4 +1,4 @@
-package magicMqtt
+package core
 
 import (
 	"encoding/json"
@@ -18,15 +18,18 @@ import (
 	"github.com/yamakiller/magicMqtt/topics"
 )
 
+//Engine 系统引擎
 type Engine struct {
 	FileConfig string
 	AuthConfig string
 	Model      string
 
+	_closed      chan bool
 	_broker      server.Broker
 	_signalWatch *util.SignalWatch
 }
 
+//Start 启动系统
 func (slf *Engine) Start(addr string) error {
 	model := strings.ToLower(slf.Model)
 	logPath := ""
@@ -84,7 +87,7 @@ func (slf *Engine) Start(addr string) error {
 	}
 
 	blackboard.Instance().Sessions = sessions.NewGroup()
-	blackboard.Instance().Topics, _ = topics.NewManager("men")
+	blackboard.Instance().Topics, _ = topics.NewManager("mem")
 	//启动服务
 	slf._broker = &server.TCPBroker{}
 	if err := slf._broker.ListenAndServe(addr); err != nil {
@@ -92,6 +95,7 @@ func (slf *Engine) Start(addr string) error {
 	}
 
 	//监听信号
+	slf._closed = make(chan bool)
 	slf._signalWatch = &util.SignalWatch{}
 	slf._signalWatch.Initial(slf.signalClose)
 	slf._signalWatch.Watch()
@@ -100,12 +104,45 @@ func (slf *Engine) Start(addr string) error {
 }
 
 func (slf *Engine) signalClose() {
-	if slf._broker != nil {
-		slf._broker.Shutdown()
-		slf._broker = nil
-	}
+	close(slf._closed)
 }
 
+//Info 输出消息级日志
+func (slf *Engine) Info(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Info(0, "", fmt, args...)
+}
+
+//Warning 输出警告级日志
+func (slf *Engine) Warning(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Warning(0, "", fmt, args...)
+}
+
+//Error 输出错误级日志
+func (slf *Engine) Error(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Error(0, "", fmt, args...)
+}
+
+//Debug 输出调试级日志
+func (slf *Engine) Debug(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Debug(0, "", fmt, args...)
+}
+
+//Wait 等待系统结束
+func (slf *Engine) Wait() {
+	if slf._closed == nil {
+		goto Exit
+	}
+
+	for {
+		select {
+		case <-slf._closed:
+			goto Exit
+		}
+	}
+Exit:
+}
+
+//Shutdown 关闭系统
 func (slf *Engine) Shutdown() {
 	if slf._broker != nil {
 		slf._broker.Shutdown()
@@ -114,7 +151,7 @@ func (slf *Engine) Shutdown() {
 
 	if slf._signalWatch != nil {
 		slf._signalWatch.Wait()
-		slf._signalWatch = nil 
+		slf._signalWatch = nil
 	}
 
 	if blackboard.Instance().Auth != nil {

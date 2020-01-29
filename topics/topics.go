@@ -27,7 +27,7 @@ var (
 	providers = make(map[string]TopicsProvider)
 )
 
-//TopicsProvider 主题
+//TopicsProvider 主题接口
 type TopicsProvider interface {
 	Subscribe(topic []byte, qos byte, subscriber interface{}) (byte, error)
 	Unsubscribe(topic []byte, subscriber interface{}) error
@@ -50,43 +50,52 @@ func Register(name string, provider TopicsProvider) {
 	providers[name] = provider
 }
 
+//Unregister 注销
 func Unregister(name string) {
 	delete(providers, name)
 }
 
+//Manager Topic 管理器
 type Manager struct {
-	p TopicsProvider
+	_p TopicsProvider
 }
 
+//NewManager 创建管理器
 func NewManager(providerName string) (*Manager, error) {
 	p, ok := providers[providerName]
 	if !ok {
 		return nil, fmt.Errorf("session: unknown provider %q", providerName)
 	}
 
-	return &Manager{p: p}, nil
+	return &Manager{_p: p}, nil
 }
 
-func (this *Manager) Subscribe(topic []byte, qos byte, subscriber interface{}) (byte, error) {
-	return this.p.Subscribe(topic, qos, subscriber)
+//Subscribe 订阅主题
+func (slf *Manager) Subscribe(topic []byte, qos byte, subscriber interface{}) (byte, error) {
+	return slf._p.Subscribe(topic, qos, subscriber)
 }
 
-func (this *Manager) Unsubscribe(topic []byte, subscriber interface{}) error {
-	return this.p.Unsubscribe(topic, subscriber)
+//Unsubscribe 取消订阅
+func (slf *Manager) Unsubscribe(topic []byte, subscriber interface{}) error {
+	return slf._p.Unsubscribe(topic, subscriber)
 }
 
-func (this *Manager) Subscribers(topic []byte, qos byte, subs *[]interface{}, qoss *[]byte) error {
-	return this.p.Subscribers(topic, qos, subs, qoss)
+//Subscribers 订阅多个主题
+func (slf *Manager) Subscribers(topic []byte, qos byte, subs *[]interface{}, qoss *[]byte) error {
+	return slf._p.Subscribers(topic, qos, subs, qoss)
 }
 
-func (this *Manager) Retain(msg *message.Publish) error {
-	return this.p.Retain(msg)
+//Retain ...
+func (slf *Manager) Retain(msg *message.Publish) error {
+	return slf._p.Retain(msg)
 }
 
-func (this *Manager) Retained(topic []byte, msgs *[]*message.Publish) error {
-	return this.p.Retained(topic, msgs)
+//Retained ...
+func (slf *Manager) Retained(topic []byte, msgs *[]*message.Publish) error {
+	return slf._p.Retained(topic, msgs)
 }
 
-func (this *Manager) Close() error {
-	return this.p.Close()
+//Close 关闭
+func (slf *Manager) Close() error {
+	return slf._p.Close()
 }
