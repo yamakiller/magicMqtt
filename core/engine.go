@@ -2,16 +2,17 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"strings"
 
-	"github.com/yamakiller/magicMqtt/auth"
 	"github.com/yamakiller/magicMqtt/blackboard"
 
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 	"github.com/yamakiller/magicLibs/logger"
 	"github.com/yamakiller/magicLibs/util"
+	"github.com/yamakiller/magicMqtt/auth"
 	"github.com/yamakiller/magicMqtt/log"
 	"github.com/yamakiller/magicMqtt/server"
 	"github.com/yamakiller/magicMqtt/sessions"
@@ -21,7 +22,7 @@ import (
 //Engine 系统引擎
 type Engine struct {
 	FileConfig string
-	AuthConfig string
+	AuthMode   string
 	Model      string
 
 	_closed      chan bool
@@ -63,27 +64,34 @@ func (slf *Engine) Start(addr string) error {
 	blackboard.Instance().Log = logHandle
 	blackboard.Instance().Log.Mount()
 	//读取配置文件
-	cnf := blackboard.Config{}
+	cfg := blackboard.Config{}
 	content, err := ioutil.ReadFile(slf.FileConfig)
 	if err != nil {
 		return err
 	}
 
-	err = json.Unmarshal(content, &cnf)
+	err = json.Unmarshal(content, &cfg)
 	if err != nil {
 		return err
 	}
 
-	blackboard.Instance().Deploy = cnf
+	blackboard.Instance().Deploy = cfg
 	//创建验证器
-	if slf.AuthConfig == "" {
-		blackboard.Instance().Auth, _ = auth.New("mock", "")
-	} else {
-		authTmp, err := auth.New(auth.AuthDB, slf.AuthConfig)
+	slf.AuthMode = strings.ToLower(slf.AuthMode)
+	switch slf.AuthMode {
+	case "authdb":
+		if cfg.AuthDB == "" {
+			return errors.New("Please configure AuthDB configuration information")
+		}
+		au, err := auth.New(auth.AuthDB, cfg.AuthDB)
 		if err != nil {
 			return err
 		}
-		blackboard.Instance().Auth = authTmp
+		blackboard.Instance().Auth = au
+	case "authfile":
+	default:
+		au, _ := auth.New("mock", "")
+		blackboard.Instance().Auth = au
 	}
 
 	blackboard.Instance().Sessions = sessions.NewGroup()
