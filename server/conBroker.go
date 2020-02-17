@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -553,32 +554,33 @@ func (slf *ConBroker) Close() error {
 
 //Info 输出等级为Info的日志
 func (slf *ConBroker) Info(fmt string, args ...interface{}) {
-	id, client := slf.getPrefix()
-	blackboard.Instance().Log.Info(id, client, fmt, args...)
+	blackboard.Instance().Log.Info(slf.getPrefix(), fmt, args...)
 }
 
 //Error 输出等级为Error的日志
 func (slf *ConBroker) Error(fmt string, args ...interface{}) {
-	id, client := slf.getPrefix()
-	blackboard.Instance().Log.Error(id, client, fmt, args...)
+	blackboard.Instance().Log.Error(slf.getPrefix(), fmt, args...)
 }
 
 //Warning 输出等级为Warning的日志
 func (slf *ConBroker) Warning(fmt string, args ...interface{}) {
-	id, client := slf.getPrefix()
-	blackboard.Instance().Log.Error(id, client, fmt, args...)
+	blackboard.Instance().Log.Error(slf.getPrefix(), fmt, args...)
 }
 
 //Debug 输出等级为Debug的日志
 func (slf *ConBroker) Debug(fmt string, args ...interface{}) {
-	id, client := slf.getPrefix()
-	blackboard.Instance().Log.Debug(id, client, fmt, args...)
+	blackboard.Instance().Log.Debug(slf.getPrefix(), fmt, args...)
 }
 
-func (slf *ConBroker) getPrefix() (int64, string) {
+//Panic 输出等级为Panic的日志
+func (slf *ConBroker) Panic(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Panic(slf.getPrefix(), fmt, args...)
+}
+
+func (slf *ConBroker) getPrefix() string {
 	session := slf._session
 	if session == nil {
-		return slf._id, ""
+		return fmt.Sprintf("%d@undefined", slf._id)
 	}
-	return slf._id, session.GetClientID()
+	return fmt.Sprintf("%d@%s", slf._id, session.GetClientID())
 }

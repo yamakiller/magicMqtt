@@ -107,20 +107,29 @@ func (slf *TCPBroker) Shutdown() {
 
 //Info 输出等级为Info的日志
 func (slf *TCPBroker) Info(fmt string, args ...interface{}) {
-	blackboard.Instance().Log.Info(0, "", fmt, args...)
+	blackboard.Instance().Log.Info(slf.getPrefix(), fmt, args...)
 }
 
 //Error 输出等级为Error的日志
 func (slf *TCPBroker) Error(fmt string, args ...interface{}) {
-	blackboard.Instance().Log.Error(0, "", fmt, args...)
+	blackboard.Instance().Log.Error(slf.getPrefix(), fmt, args...)
 }
 
 //Warning 输出等级为Warning的日志
 func (slf *TCPBroker) Warning(fmt string, args ...interface{}) {
-	blackboard.Instance().Log.Error(0, "", fmt, args...)
+	blackboard.Instance().Log.Error(slf.getPrefix(), fmt, args...)
 }
 
 //Debug 输出等级为Debug的日志
 func (slf *TCPBroker) Debug(fmt string, args ...interface{}) {
-	blackboard.Instance().Log.Debug(0, "", fmt, args...)
+	blackboard.Instance().Log.Debug(slf.getPrefix(), fmt, args...)
+}
+
+func (slf *TCPBroker) getPrefix() string {
+	return "mqtt@system"
+}
+
+//Panic 输出崩溃信息
+func (slf *TCPBroker) Panic(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Panic(slf.getPrefix(), fmt, args...)
 }

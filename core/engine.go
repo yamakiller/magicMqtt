@@ -6,14 +6,12 @@ import (
 	"io/ioutil"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	"github.com/yamakiller/magicMqtt/blackboard"
 
-	"github.com/sirupsen/logrus"
-	prefixed "github.com/x-cray/logrus-prefixed-formatter"
-	"github.com/yamakiller/magicLibs/logger"
+	"github.com/yamakiller/magicLibs/log"
 	"github.com/yamakiller/magicLibs/util"
 	"github.com/yamakiller/magicMqtt/auth"
-	"github.com/yamakiller/magicMqtt/log"
 	"github.com/yamakiller/magicMqtt/server"
 	"github.com/yamakiller/magicMqtt/sessions"
 	"github.com/yamakiller/magicMqtt/topics"
@@ -34,35 +32,25 @@ type Engine struct {
 func (slf *Engine) Start(addr string) error {
 	model := strings.ToLower(slf.Model)
 	logPath := ""
-	logSize := 256
-	logLevel := logger.DEBUGLEVEL
-
+	logName := ""
+	logLevel := logrus.DebugLevel
 	if model == "release" {
 		logPath = "./log"
-		logLevel = logger.INFOLEVEL
+		logName = "mqtt"
+		logLevel = logrus.InfoLevel
 	}
 
-	logHandle := func() *log.LogBroker {
-		l := log.LogBroker{}
-		l.WithFilPath(logPath)
-		l.WithHandle(logrus.New())
-		l.WithMailMax(logSize)
-		l.WithLevel(logrus.Level(logLevel))
+	hlog, err := log.SpawnFileLogrus(logLevel,
+		logPath,
+		logName)
 
-		formatter := new(prefixed.TextFormatter)
-		formatter.FullTimestamp = true
-		formatter.TimestampFormat = "2006-01-02 15:04:05"
-		formatter.SetColorScheme(&prefixed.ColorScheme{
-			PrefixStyle:    "white+h",
-			TimestampStyle: "black+h"})
-		l.WithFormatter(formatter)
-		l.Initial()
-		l.Redirect()
-		return &l
-	}()
+	if err != nil {
+		return err
+	}
 
-	blackboard.Instance().Log = logHandle
-	blackboard.Instance().Log.Mount()
+	blackboard.Instance().Log = &log.DefaultAgent{}
+	blackboard.Instance().Log.WithHandle(hlog)
+
 	//读取配置文件
 	cfg := blackboard.Config{}
 	content, err := ioutil.ReadFile(slf.FileConfig)
@@ -117,22 +105,31 @@ func (slf *Engine) signalClose() {
 
 //Info 输出消息级日志
 func (slf *Engine) Info(fmt string, args ...interface{}) {
-	blackboard.Instance().Log.Info(0, "", fmt, args...)
+	blackboard.Instance().Log.Info(slf.getPrefix(), fmt, args...)
 }
 
 //Warning 输出警告级日志
 func (slf *Engine) Warning(fmt string, args ...interface{}) {
-	blackboard.Instance().Log.Warning(0, "", fmt, args...)
+	blackboard.Instance().Log.Warning(slf.getPrefix(), fmt, args...)
 }
 
 //Error 输出错误级日志
 func (slf *Engine) Error(fmt string, args ...interface{}) {
-	blackboard.Instance().Log.Error(0, "", fmt, args...)
+	blackboard.Instance().Log.Error(slf.getPrefix(), fmt, args...)
 }
 
 //Debug 输出调试级日志
 func (slf *Engine) Debug(fmt string, args ...interface{}) {
-	blackboard.Instance().Log.Debug(0, "", fmt, args...)
+	blackboard.Instance().Log.Debug(slf.getPrefix(), fmt, args...)
+}
+
+//Panic 输出崩溃信息
+func (slf *Engine) Panic(fmt string, args ...interface{}) {
+	blackboard.Instance().Log.Panic(slf.getPrefix(), fmt, args...)
+}
+
+func (slf *Engine) getPrefix() string {
+	return "mqtt@system"
 }
 
 //Wait 等待系统结束

@@ -9,7 +9,7 @@ const (
 	StateConnecting
 	StateConnected
 	StateAccepted
-	StateIdle_IDLE
+	StateIdle
 	StateDetached
 	StateSend
 	StateReceive
